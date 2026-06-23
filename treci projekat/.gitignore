@@ -1,0 +1,69 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio files
+.vs/
+*.suo
+*.user
+*.userprefs
+*.vscode/
+
+# Test Results
+[Tt]est[Rr]esult*
+*.testsettings
+
+# Cache files
+*.resharper*
+*.DotSettings.user
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa]ny[Cc]pu/
+*.appx/
+*.appxrecipe/
+*.appxsym/
+*.msix/
+*.msixupload/
+
+# NuGet packages
+packages/
+*.nupkg
+*.paket.*
+paket.lock
+paket.exe
+paket.targets
+paket-files/
+*.bak
+
+# User-specific files
+*.sln.docstates
+
+# Unity3D generated files
+Library/
+Temp/
+UnityPackageManager/
+
+# Rider generated files
+.idea/
+
+# Others
+*.cache
+*.log
+logs/
+log.txt
+*.zip
+*.exe
+*.dll
+*.pdb
+*.userprefs
+*.unityproj
+*.apk
+*.unitypackage
+*.aar
+*.unityproj
+*.pidb
+*.suo
