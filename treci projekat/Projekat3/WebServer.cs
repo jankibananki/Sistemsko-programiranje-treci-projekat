@@ -13,6 +13,8 @@ namespace Projekat3
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
         private readonly ActorSystem _actorSystem;
         private readonly IActorRef _newsActor;
+        private readonly Article _article;
+        private readonly IDisposable _rxSubscription;
         private HttpListener? _listener;
         private int _requestCount = 0;
 
@@ -36,6 +38,8 @@ news-dispatcher {
 
             _actorSystem = ActorSystem.Create("NewsSystem", config);
             _newsActor = _actorSystem.ActorOf(Props.Create(() => new NewsActor(_lockConsole)).WithDispatcher("news-dispatcher"), "newsActor");
+            _article = new Article(_newsActor, _lockConsole);
+            _rxSubscription = _article.Subscribe(new Result(_newsActor));
             File.WriteAllText(_logFile, "Server log started: " + DateTime.Now + Environment.NewLine);
         }
 
@@ -46,6 +50,12 @@ news-dispatcher {
             _listener.Start();
 
             Log("WebServer started on " + _urlServer);
+
+            string apiKey = Environment.GetEnvironmentVariable("NEWS_API_KEY") ?? "";
+            if (string.IsNullOrWhiteSpace(apiKey))
+                Log("NEWS_API_KEY nije podešen. Rx tok je pokrenut tek kada postoji API ključ u environment promenljivoj.");
+            else
+                _article.Start(apiKey, TimeSpan.FromSeconds(30));
 
             _ = Task.Run(async () =>
             {
@@ -69,6 +79,8 @@ news-dispatcher {
             _cts.Cancel();
             _listener?.Stop();
             _listener?.Close();
+            _rxSubscription.Dispose();
+            _article.Dispose();
             await _actorSystem.Terminate();
             Log("WebServer stopped.");
         }
@@ -77,7 +89,6 @@ news-dispatcher {
         {
             HttpListenerRequest request = context.Request;
             HttpListenerResponse response = context.Response;
-            bool actorRequestStarted = false;
 
             try
             {
@@ -93,7 +104,6 @@ news-dispatcher {
 
                 string keyword = request.QueryString["keyword"] ?? "";
                 string category = request.QueryString["category"] ?? "";
-                string apiKey = request.QueryString["apiKey"] ?? Environment.GetEnvironmentVariable("NEWS_API_KEY") ?? "";
 
                 if (string.IsNullOrWhiteSpace(keyword) || string.IsNullOrWhiteSpace(category))
                 {
@@ -102,35 +112,13 @@ news-dispatcher {
                     return;
                 }
 
-                if (string.IsNullOrWhiteSpace(apiKey))
-                {
-                    await SendResponse(response, 400, "Nedostaje apiKey parametar ili NEWS_API_KEY environment promenljiva.");
-                    Log("Request " + requestNumber + " failed: missing apiKey.");
-                    return;
-                }
-
-                await _newsActor.Ask<RequestStarted>(new StartRequest(requestNumber, keyword, category), TimeSpan.FromSeconds(5));
-                actorRequestStarted = true;
-
-                using Article article = new Article();
-                Result result = new Result(_newsActor);
-
-                using (article.Subscribe(result))
-                {
-                    await article.GetArticles(requestNumber, keyword, category, apiKey);
-                    await result.Created;
-                }
-
-                NewsResult finalResult = await _newsActor.Ask<NewsResult>(new GetResult(requestNumber), TimeSpan.FromSeconds(10));
-                actorRequestStarted = false;
+                await _newsActor.Ask<QueryReady>(new EnsureQuery(keyword, category), TimeSpan.FromSeconds(5));
+                NewsResult finalResult = await _newsActor.Ask<NewsResult>(new GetResult(keyword, category), TimeSpan.FromSeconds(10));
                 await SendResponse(response, 200, FormatResult(finalResult));
                 Log("Request " + requestNumber + " successfully processed.");
             }
             catch (Exception e)
             {
-                if (actorRequestStarted)
-                    _newsActor.Tell(new CancelRequest(requestNumber));
-
                 Log("Request " + requestNumber + " error: " + e.Message);
                 await SendResponse(response, 500, "Greška: " + e.Message);
             }
@@ -180,7 +168,8 @@ news-dispatcher {
         private string GetHelpText()
         {
             return "Primer poziva:\n" +
-                   "http://localhost:5000/?keyword=ai&category=technology&apiKey=YOUR_NEWS_API_KEY\n\n" +
+                   "http://localhost:5000/?keyword=ai&category=technology\n\n" +
+                   "NEWS_API_KEY se podešava kroz environment promenljivu.\n\n" +
                    "Dozvoljene News API kategorije: business, entertainment, general, health, science, sports, technology.";
         }
 
